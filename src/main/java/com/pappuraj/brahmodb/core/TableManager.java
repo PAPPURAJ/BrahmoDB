@@ -287,4 +287,65 @@ public class TableManager {
 
         return rows;
     }
+
+
+
+
+
+    public List<Row> selectWhere(
+            String databaseName,
+            String tableName,
+            String columnName,
+            String expectedValue
+    ) {
+        List<Row> matchedRows = new ArrayList<>();
+
+        if (databaseName == null) {
+            return matchedRows;
+        }
+
+        TableSchema schema = describeTable(databaseName, tableName);
+
+        if (schema == null) {
+            return null;
+        }
+
+        int columnIndex = findColumnIndex(schema, columnName);
+
+        if (columnIndex == -1) {
+            return null;
+        }
+
+        List<Row> allRows = selectAll(databaseName, tableName);
+
+        if (allRows == null) {
+            return null;
+        }
+
+        for (Row row : allRows) {
+            List<String> values = row.getValues();
+
+            if (columnIndex < values.size()) {
+                String actualValue = values.get(columnIndex);
+
+                if (actualValue.equals(expectedValue)) {
+                    matchedRows.add(row);
+                }
+            }
+        }
+
+        return matchedRows;
+    }
+
+    public int findColumnIndex(TableSchema schema, String columnName) {
+        List<Column> columns = schema.getColumns();
+
+        for (int i = 0; i < columns.size(); i++) {
+            if (columns.get(i).getName().equalsIgnoreCase(columnName)) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
 }

@@ -91,6 +91,8 @@ public class BrahmoShell {
                     handleDescTable(command);
                 } else if (normalizedCommand.startsWith("insert into ")) {
                     handleInsertInto(command);
+                } else if (normalizedCommand.startsWith("select * from ") && normalizedCommand.contains(" where ")) {
+                    handleSelectWhere(command);
                 } else if (normalizedCommand.startsWith("select * from ")) {
                     handleSelectAll(command);
                 } else {
@@ -412,6 +414,7 @@ public class BrahmoShell {
         System.out.println("  DESC table_name;                           Short form of DESCRIBE");
         System.out.println("  INSERT INTO table VALUES (...);            Insert a row into a table");
         System.out.println("  SELECT * FROM table;                       Show all rows from a table");
+        System.out.println("  SELECT * FROM table WHERE col = value;     Show rows matching condition");
         System.out.println();
         System.out.println("Supported types:");
         System.out.println("  INT, TEXT, DOUBLE, BOOLEAN");
@@ -558,5 +561,90 @@ public class BrahmoShell {
 
     private String padRight(String text, int length) {
         return String.format("%-" + length + "s", text);
+    }
+
+
+    private void handleSelectWhere(String command) {
+        String currentDatabase = databaseManager.getCurrentDatabase();
+
+        if (currentDatabase == null) {
+            System.out.println("No database selected. Use USE database_name; first.");
+            return;
+        }
+
+        String cleanCommand = command.replace(";", "").trim();
+        String lowerCommand = cleanCommand.toLowerCase();
+
+        int fromIndex = lowerCommand.indexOf("from");
+        int whereIndex = lowerCommand.indexOf("where");
+
+        if (fromIndex == -1 || whereIndex == -1 || whereIndex <= fromIndex) {
+            System.out.println("Invalid SELECT WHERE syntax.");
+            System.out.println("Example: SELECT * FROM students WHERE id = 1;");
+            return;
+        }
+
+        String tableName = cleanCommand
+                .substring(fromIndex + "from".length(), whereIndex)
+                .trim();
+
+        String conditionText = cleanCommand
+                .substring(whereIndex + "where".length())
+                .trim();
+
+        if (tableName.isEmpty() || conditionText.isEmpty()) {
+            System.out.println("Invalid SELECT WHERE syntax.");
+            System.out.println("Example: SELECT * FROM students WHERE id = 1;");
+            return;
+        }
+
+        String[] conditionParts = conditionText.split("=");
+
+        if (conditionParts.length != 2) {
+            System.out.println("Only equal condition is supported now.");
+            System.out.println("Example: SELECT * FROM students WHERE id = 1;");
+            return;
+        }
+
+        String columnName = conditionParts[0].trim();
+        String expectedValue = cleanSqlValue(conditionParts[1].trim());
+
+        TableSchema schema = tableManager.describeTable(currentDatabase, tableName);
+
+        if (schema == null) {
+            System.out.println("Table does not exist: " + tableName);
+            return;
+        }
+
+        int columnIndex = tableManager.findColumnIndex(schema, columnName);
+
+        if (columnIndex == -1) {
+            System.out.println("Column does not exist: " + columnName);
+            return;
+        }
+
+        List<Row> rows = tableManager.selectWhere(
+                currentDatabase,
+                tableName,
+                columnName,
+                expectedValue
+        );
+
+        if (rows == null) {
+            System.out.println("Query failed.");
+            return;
+        }
+
+        printRows(schema, rows);
+    }
+
+    private String cleanSqlValue(String value) {
+        value = value.trim();
+
+        if (value.startsWith("'") && value.endsWith("'") && value.length() >= 2) {
+            return value.substring(1, value.length() - 1);
+        }
+
+        return value;
     }
 }
