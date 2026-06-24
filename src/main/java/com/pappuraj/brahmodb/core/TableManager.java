@@ -239,4 +239,52 @@ public class TableManager {
 
         return null;
     }
+
+
+
+
+
+
+    public List<Row> selectAll(String databaseName, String tableName) {
+        List<Row> rows = new ArrayList<>();
+
+        if (databaseName == null) {
+            return rows;
+        }
+
+        TableSchema schema = describeTable(databaseName, tableName);
+
+        if (schema == null) {
+            return null;
+        }
+
+        File dataFile = new File(
+                DATA_DIRECTORY + File.separator + databaseName
+                        + File.separator + TABLES_DIRECTORY,
+                tableName + ".data"
+        );
+
+        if (!dataFile.exists()) {
+            return rows;
+        }
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(dataFile))) {
+            String line;
+
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split("\\|", -1);
+                List<String> values = new ArrayList<>();
+
+                for (String part : parts) {
+                    values.add(part.trim());
+                }
+
+                rows.add(new Row(values));
+            }
+        } catch (IOException e) {
+            return rows;
+        }
+
+        return rows;
+    }
 }

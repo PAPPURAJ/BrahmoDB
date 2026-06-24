@@ -91,6 +91,8 @@ public class BrahmoShell {
                     handleDescTable(command);
                 } else if (normalizedCommand.startsWith("insert into ")) {
                     handleInsertInto(command);
+                } else if (normalizedCommand.startsWith("select * from ")) {
+                    handleSelectAll(command);
                 } else {
                     System.out.println("Unknown command: " + input);
                     System.out.println("Type 'help;' to see available commands.");
@@ -243,6 +245,48 @@ public class BrahmoShell {
         System.out.println(result);
     }
 
+
+
+
+    private void handleSelectAll(String command) {
+        String currentDatabase = databaseManager.getCurrentDatabase();
+
+        if (currentDatabase == null) {
+            System.out.println("No database selected. Use USE database_name; first.");
+            return;
+        }
+
+        String tableName = command
+                .replaceFirst("(?i)select \\* from", "")
+                .replace(";", "")
+                .trim();
+
+        if (tableName.isEmpty()) {
+            System.out.println("Table name is required.");
+            return;
+        }
+
+        TableSchema schema = tableManager.describeTable(currentDatabase, tableName);
+
+        if (schema == null) {
+            System.out.println("Table does not exist: " + tableName);
+            return;
+        }
+
+        List<Row> rows = tableManager.selectAll(currentDatabase, tableName);
+
+        if (rows == null) {
+            System.out.println("Table does not exist: " + tableName);
+            return;
+        }
+
+        printRows(schema, rows);
+    }
+
+
+
+
+
     private List<String> parseValues(String valuesText) {
         List<String> values = new ArrayList<>();
 
@@ -367,6 +411,7 @@ public class BrahmoShell {
         System.out.println("  DESCRIBE table_name;                       Show table structure");
         System.out.println("  DESC table_name;                           Short form of DESCRIBE");
         System.out.println("  INSERT INTO table VALUES (...);            Insert a row into a table");
+        System.out.println("  SELECT * FROM table;                       Show all rows from a table");
         System.out.println();
         System.out.println("Supported types:");
         System.out.println("  INT, TEXT, DOUBLE, BOOLEAN");
@@ -434,5 +479,84 @@ public class BrahmoShell {
         }
 
         System.out.println("+--------------------+--------------------+");
+    }
+
+
+
+    private void printRows(TableSchema schema, List<Row> rows) {
+        List<Column> columns = schema.getColumns();
+
+        List<Integer> widths = calculateColumnWidths(columns, rows);
+
+        printSeparator(widths);
+        printHeader(columns, widths);
+        printSeparator(widths);
+
+        for (Row row : rows) {
+            printRow(row, widths);
+        }
+
+        printSeparator(widths);
+
+        System.out.println(rows.size() + " row(s) selected.");
+    }
+
+    private List<Integer> calculateColumnWidths(List<Column> columns, List<Row> rows) {
+        List<Integer> widths = new ArrayList<>();
+
+        for (Column column : columns) {
+            widths.add(column.getName().length());
+        }
+
+        for (Row row : rows) {
+            List<String> values = row.getValues();
+
+            for (int i = 0; i < values.size(); i++) {
+                int valueLength = values.get(i).length();
+
+                if (valueLength > widths.get(i)) {
+                    widths.set(i, valueLength);
+                }
+            }
+        }
+
+        return widths;
+    }
+
+    private void printSeparator(List<Integer> widths) {
+        System.out.print("+");
+
+        for (Integer width : widths) {
+            System.out.print("-".repeat(width + 2));
+            System.out.print("+");
+        }
+
+        System.out.println();
+    }
+
+    private void printHeader(List<Column> columns, List<Integer> widths) {
+        System.out.print("|");
+
+        for (int i = 0; i < columns.size(); i++) {
+            System.out.print(" " + padRight(columns.get(i).getName(), widths.get(i)) + " |");
+        }
+
+        System.out.println();
+    }
+
+    private void printRow(Row row, List<Integer> widths) {
+        System.out.print("|");
+
+        List<String> values = row.getValues();
+
+        for (int i = 0; i < values.size(); i++) {
+            System.out.print(" " + padRight(values.get(i), widths.get(i)) + " |");
+        }
+
+        System.out.println();
+    }
+
+    private String padRight(String text, int length) {
+        return String.format("%-" + length + "s", text);
     }
 }
