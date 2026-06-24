@@ -91,8 +91,8 @@ public class BrahmoShell {
                     handleDescTable(command);
                 } else if (normalizedCommand.startsWith("insert into ")) {
                     handleInsertInto(command);
-                } else if (normalizedCommand.startsWith("select * from ") && normalizedCommand.contains(" where ")) {
-                    handleSelectWhere(command);
+                } else if (normalizedCommand.startsWith("select ") && normalizedCommand.contains(" from ") && normalizedCommand.contains(" where ")) {
+                    handleSelectColumnsWhere(command);
                 } else if (normalizedCommand.startsWith("select * from ")) {
                     handleSelectAll(command);
                 } else if (normalizedCommand.startsWith("select ") && normalizedCommand.contains(" from ")) {
@@ -418,6 +418,7 @@ public class BrahmoShell {
         System.out.println("  SELECT * FROM table;                       Show all rows from a table");
         System.out.println("  SELECT * FROM table WHERE col = value;     Show rows matching condition");
         System.out.println("  SELECT col1, col2 FROM table;              Show selected columns from a table");
+        System.out.println("  SELECT col1 FROM table WHERE col = value;  Show selected columns with condition");
         System.out.println();
         System.out.println("Supported types:");
         System.out.println("  INT, TEXT, DOUBLE, BOOLEAN");
@@ -756,4 +757,113 @@ public class BrahmoShell {
 
         return projectedRows;
     }
+
+
+
+    private void handleSelectColumnsWhere(String command) {
+        String currentDatabase = databaseManager.getCurrentDatabase();
+
+        if (currentDatabase == null) {
+            System.out.println("No database selected. Use USE database_name; first.");
+            return;
+        }
+
+        String cleanCommand = command.replace(";", "").trim();
+        String lowerCommand = cleanCommand.toLowerCase();
+
+        int selectIndex = lowerCommand.indexOf("select");
+        int fromIndex = lowerCommand.indexOf("from");
+        int whereIndex = lowerCommand.indexOf("where");
+
+        if (selectIndex == -1 || fromIndex == -1 || whereIndex == -1 || fromIndex <= selectIndex || whereIndex <= fromIndex) {
+            System.out.println("Invalid SELECT WHERE syntax.");
+            System.out.println("Example: SELECT id, name FROM students WHERE age = 20;");
+            return;
+        }
+
+        String columnsText = cleanCommand
+                .substring(selectIndex + "select".length(), fromIndex)
+                .trim();
+
+        String tableName = cleanCommand
+                .substring(fromIndex + "from".length(), whereIndex)
+                .trim();
+
+        String conditionText = cleanCommand
+                .substring(whereIndex + "where".length())
+                .trim();
+
+        if (columnsText.isEmpty() || tableName.isEmpty() || conditionText.isEmpty()) {
+            System.out.println("Invalid SELECT WHERE syntax.");
+            System.out.println("Example: SELECT id, name FROM students WHERE age = 20;");
+            return;
+        }
+
+        String[] conditionParts = conditionText.split("=");
+
+        if (conditionParts.length != 2) {
+            System.out.println("Only equal condition is supported now.");
+            System.out.println("Example: SELECT id, name FROM students WHERE age = 20;");
+            return;
+        }
+
+        String whereColumnName = conditionParts[0].trim();
+        String expectedValue = cleanSqlValue(conditionParts[1].trim());
+
+        TableSchema schema = tableManager.describeTable(currentDatabase, tableName);
+
+        if (schema == null) {
+            System.out.println("Table does not exist: " + tableName);
+            return;
+        }
+
+        int whereColumnIndex = tableManager.findColumnIndex(schema, whereColumnName);
+
+        if (whereColumnIndex == -1) {
+            System.out.println("Column does not exist: " + whereColumnName);
+            return;
+        }
+
+        List<Row> filteredRows = tableManager.selectWhere(
+                currentDatabase,
+                tableName,
+                whereColumnName,
+                expectedValue
+        );
+
+        if (filteredRows == null) {
+            System.out.println("Query failed.");
+            return;
+        }
+
+        if (columnsText.equals("*")) {
+            printRows(schema, filteredRows);
+            return;
+        }
+
+        List<String> selectedColumnNames = parseSelectedColumns(columnsText);
+        List<Integer> selectedIndexes = new ArrayList<>();
+        List<Column> selectedColumns = new ArrayList<>();
+
+        for (String columnName : selectedColumnNames) {
+            int columnIndex = tableManager.findColumnIndex(schema, columnName);
+
+            if (columnIndex == -1) {
+                System.out.println("Column does not exist: " + columnName);
+                return;
+            }
+
+            selectedIndexes.add(columnIndex);
+            selectedColumns.add(schema.getColumns().get(columnIndex));
+        }
+
+        List<Row> projectedRows = projectRows(filteredRows, selectedIndexes);
+
+        TableSchema projectedSchema = new TableSchema(tableName, selectedColumns);
+
+        printRows(projectedSchema, projectedRows);
+    }
+
+
+
 }
