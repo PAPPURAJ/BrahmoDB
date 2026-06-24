@@ -1,0 +1,4 @@
+table=students
+id:INT
+name:TEXT
+age:INT

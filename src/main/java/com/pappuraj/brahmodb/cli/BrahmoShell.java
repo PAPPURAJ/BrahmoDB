@@ -1,7 +1,11 @@
 package com.pappuraj.brahmodb.cli;
 
+import com.pappuraj.brahmodb.catalog.Column;
+import com.pappuraj.brahmodb.catalog.TableSchema;
 import com.pappuraj.brahmodb.core.DatabaseManager;
+import com.pappuraj.brahmodb.core.TableManager;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
@@ -9,9 +13,11 @@ public class BrahmoShell {
 
     private boolean running = true;
     private final DatabaseManager databaseManager;
+    private final TableManager tableManager;
 
     public BrahmoShell() {
         this.databaseManager = new DatabaseManager();
+        this.tableManager = new TableManager();
     }
 
     public void start() {
@@ -36,7 +42,6 @@ public class BrahmoShell {
 
     private void handleCommand(String input) {
         String command = input.trim();
-
         String normalizedCommand = command.toLowerCase();
 
         switch (normalizedCommand) {
@@ -60,6 +65,11 @@ public class BrahmoShell {
                 handleShowDatabases();
                 break;
 
+            case "show tables;":
+            case "show tables":
+                handleShowTables();
+                break;
+
             case "exit;":
             case "exit":
             case "quit;":
@@ -72,6 +82,8 @@ public class BrahmoShell {
                     handleCreateDatabase(command);
                 } else if (normalizedCommand.startsWith("use ")) {
                     handleUseDatabase(command);
+                } else if (normalizedCommand.startsWith("create table ")) {
+                    handleCreateTable(command);
                 } else {
                     System.out.println("Unknown command: " + input);
                     System.out.println("Type 'help;' to see available commands.");
@@ -128,6 +140,109 @@ public class BrahmoShell {
         System.out.println(result);
     }
 
+    private void handleCreateTable(String command) {
+        String currentDatabase = databaseManager.getCurrentDatabase();
+
+        if (currentDatabase == null) {
+            System.out.println("No database selected. Use USE database_name; first.");
+            return;
+        }
+
+        String cleanCommand = command.replace(";", "").trim();
+
+        int tableKeywordEndIndex = cleanCommand.toLowerCase().indexOf("create table") + "create table".length();
+        String afterCreateTable = cleanCommand.substring(tableKeywordEndIndex).trim();
+
+        int openParenIndex = afterCreateTable.indexOf("(");
+        int closeParenIndex = afterCreateTable.lastIndexOf(")");
+
+        if (openParenIndex == -1 || closeParenIndex == -1 || closeParenIndex < openParenIndex) {
+            System.out.println("Invalid CREATE TABLE syntax.");
+            System.out.println("Example: CREATE TABLE students (id INT, name TEXT, age INT);");
+            return;
+        }
+
+        String tableName = afterCreateTable.substring(0, openParenIndex).trim();
+        String columnsText = afterCreateTable.substring(openParenIndex + 1, closeParenIndex).trim();
+
+        if (tableName.isEmpty() || columnsText.isEmpty()) {
+            System.out.println("Invalid CREATE TABLE syntax.");
+            return;
+        }
+
+        List<Column> columns = parseColumns(columnsText);
+
+        if (columns.isEmpty()) {
+            System.out.println("No valid columns found.");
+            return;
+        }
+
+        TableSchema schema = new TableSchema(tableName, columns);
+
+        String result = tableManager.createTable(currentDatabase, schema);
+        System.out.println(result);
+    }
+
+    private List<Column> parseColumns(String columnsText) {
+        List<Column> columns = new ArrayList<>();
+
+        String[] columnDefinitions = columnsText.split(",");
+
+        for (String definition : columnDefinitions) {
+            String[] parts = definition.trim().split("\\s+");
+
+            if (parts.length != 2) {
+                return new ArrayList<>();
+            }
+
+            String columnName = parts[0].trim();
+            String columnType = parts[1].trim();
+
+            if (!isValidColumnType(columnType)) {
+                return new ArrayList<>();
+            }
+
+            columns.add(new Column(columnName, columnType));
+        }
+
+        return columns;
+    }
+
+    private boolean isValidColumnType(String type) {
+        String normalizedType = type.toUpperCase();
+
+        return normalizedType.equals("INT")
+                || normalizedType.equals("TEXT")
+                || normalizedType.equals("DOUBLE")
+                || normalizedType.equals("BOOLEAN");
+    }
+
+    private void handleShowTables() {
+        String currentDatabase = databaseManager.getCurrentDatabase();
+
+        if (currentDatabase == null) {
+            System.out.println("No database selected. Use USE database_name; first.");
+            return;
+        }
+
+        List<String> tables = tableManager.showTables(currentDatabase);
+
+        if (tables.isEmpty()) {
+            System.out.println("No tables found.");
+            return;
+        }
+
+        System.out.println("+--------------------+");
+        System.out.println("| Tables             |");
+        System.out.println("+--------------------+");
+
+        for (String table : tables) {
+            System.out.printf("| %-18s |%n", table);
+        }
+
+        System.out.println("+--------------------+");
+    }
+
     private void printPrompt() {
         String currentDatabase = databaseManager.getCurrentDatabase();
 
@@ -149,15 +264,22 @@ public class BrahmoShell {
 
     private void printHelp() {
         System.out.println("Available commands:");
-        System.out.println("  help;                  Show available commands");
-        System.out.println("  version;               Show BrahmoDB version");
-        System.out.println("  clear;                 Clear the terminal screen");
-        System.out.println("  exit;                  Exit BrahmoDB shell");
+        System.out.println("  help;                                      Show available commands");
+        System.out.println("  version;                                   Show BrahmoDB version");
+        System.out.println("  clear;                                     Clear the terminal screen");
+        System.out.println("  exit;                                      Exit BrahmoDB shell");
         System.out.println();
         System.out.println("Database commands:");
-        System.out.println("  CREATE DATABASE name;  Create a new database");
-        System.out.println("  SHOW DATABASES;        Show all databases");
-        System.out.println("  USE name;              Select a database");
+        System.out.println("  CREATE DATABASE name;                      Create a new database");
+        System.out.println("  SHOW DATABASES;                            Show all databases");
+        System.out.println("  USE name;                                  Select a database");
+        System.out.println();
+        System.out.println("Table commands:");
+        System.out.println("  CREATE TABLE name (col TYPE, col TYPE);    Create a table");
+        System.out.println("  SHOW TABLES;                               Show tables in current database");
+        System.out.println();
+        System.out.println("Supported types:");
+        System.out.println("  INT, TEXT, DOUBLE, BOOLEAN");
     }
 
     private void printVersion() {
