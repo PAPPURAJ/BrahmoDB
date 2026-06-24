@@ -4,6 +4,7 @@ import com.pappuraj.brahmodb.catalog.Column;
 import com.pappuraj.brahmodb.catalog.TableSchema;
 import com.pappuraj.brahmodb.core.DatabaseManager;
 import com.pappuraj.brahmodb.core.TableManager;
+import com.pappuraj.brahmodb.storage.Row;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -84,6 +85,12 @@ public class BrahmoShell {
                     handleUseDatabase(command);
                 } else if (normalizedCommand.startsWith("create table ")) {
                     handleCreateTable(command);
+                } else if (normalizedCommand.startsWith("describe ")) {
+                    handleDescribeTable(command);
+                } else if (normalizedCommand.startsWith("desc ")) {
+                    handleDescTable(command);
+                } else if (normalizedCommand.startsWith("insert into ")) {
+                    handleInsertInto(command);
                 } else {
                     System.out.println("Unknown command: " + input);
                     System.out.println("Type 'help;' to see available commands.");
@@ -183,6 +190,86 @@ public class BrahmoShell {
         System.out.println(result);
     }
 
+    private void handleInsertInto(String command) {
+        String currentDatabase = databaseManager.getCurrentDatabase();
+
+        if (currentDatabase == null) {
+            System.out.println("No database selected. Use USE database_name; first.");
+            return;
+        }
+
+        String cleanCommand = command.replace(";", "").trim();
+
+        String lowerCommand = cleanCommand.toLowerCase();
+
+        int insertIntoIndex = lowerCommand.indexOf("insert into");
+        int valuesIndex = lowerCommand.indexOf("values");
+
+        if (insertIntoIndex == -1 || valuesIndex == -1 || valuesIndex <= insertIntoIndex) {
+            System.out.println("Invalid INSERT syntax.");
+            System.out.println("Example: INSERT INTO students VALUES (1, 'Rahim', 20);");
+            return;
+        }
+
+        String tableName = cleanCommand
+                .substring(insertIntoIndex + "insert into".length(), valuesIndex)
+                .trim();
+
+        String valuesPart = cleanCommand
+                .substring(valuesIndex + "values".length())
+                .trim();
+
+        int openParenIndex = valuesPart.indexOf("(");
+        int closeParenIndex = valuesPart.lastIndexOf(")");
+
+        if (tableName.isEmpty() || openParenIndex == -1 || closeParenIndex == -1 || closeParenIndex < openParenIndex) {
+            System.out.println("Invalid INSERT syntax.");
+            System.out.println("Example: INSERT INTO students VALUES (1, 'Rahim', 20);");
+            return;
+        }
+
+        String valuesText = valuesPart.substring(openParenIndex + 1, closeParenIndex).trim();
+
+        List<String> values = parseValues(valuesText);
+
+        if (values.isEmpty()) {
+            System.out.println("No valid values found.");
+            return;
+        }
+
+        Row row = new Row(values);
+
+        String result = tableManager.insertIntoTable(currentDatabase, tableName, row);
+        System.out.println(result);
+    }
+
+    private List<String> parseValues(String valuesText) {
+        List<String> values = new ArrayList<>();
+
+        StringBuilder currentValue = new StringBuilder();
+        boolean insideQuotes = false;
+
+        for (int i = 0; i < valuesText.length(); i++) {
+            char ch = valuesText.charAt(i);
+
+            if (ch == '\'') {
+                insideQuotes = !insideQuotes;
+                continue;
+            }
+
+            if (ch == ',' && !insideQuotes) {
+                values.add(currentValue.toString().trim());
+                currentValue.setLength(0);
+            } else {
+                currentValue.append(ch);
+            }
+        }
+
+        values.add(currentValue.toString().trim());
+
+        return values;
+    }
+
     private List<Column> parseColumns(String columnsText) {
         List<Column> columns = new ArrayList<>();
 
@@ -277,6 +364,9 @@ public class BrahmoShell {
         System.out.println("Table commands:");
         System.out.println("  CREATE TABLE name (col TYPE, col TYPE);    Create a table");
         System.out.println("  SHOW TABLES;                               Show tables in current database");
+        System.out.println("  DESCRIBE table_name;                       Show table structure");
+        System.out.println("  DESC table_name;                           Short form of DESCRIBE");
+        System.out.println("  INSERT INTO table VALUES (...);            Insert a row into a table");
         System.out.println();
         System.out.println("Supported types:");
         System.out.println("  INT, TEXT, DOUBLE, BOOLEAN");
@@ -295,5 +385,54 @@ public class BrahmoShell {
     private void exitShell() {
         System.out.println("Exiting BrahmoDB. Goodbye.");
         running = false;
+    }
+
+    private void handleDescribeTable(String command) {
+        String tableName = command
+                .replaceFirst("(?i)describe", "")
+                .replace(";", "")
+                .trim();
+
+        describeTableByName(tableName);
+    }
+
+    private void handleDescTable(String command) {
+        String tableName = command
+                .replaceFirst("(?i)desc", "")
+                .replace(";", "")
+                .trim();
+
+        describeTableByName(tableName);
+    }
+
+    private void describeTableByName(String tableName) {
+        String currentDatabase = databaseManager.getCurrentDatabase();
+
+        if (currentDatabase == null) {
+            System.out.println("No database selected. Use USE database_name; first.");
+            return;
+        }
+
+        if (tableName.isEmpty()) {
+            System.out.println("Table name is required.");
+            return;
+        }
+
+        TableSchema schema = tableManager.describeTable(currentDatabase, tableName);
+
+        if (schema == null) {
+            System.out.println("Table does not exist: " + tableName);
+            return;
+        }
+
+        System.out.println("+--------------------+--------------------+");
+        System.out.println("| Column             | Type               |");
+        System.out.println("+--------------------+--------------------+");
+
+        for (Column column : schema.getColumns()) {
+            System.out.printf("| %-18s | %-18s |%n", column.getName(), column.getType());
+        }
+
+        System.out.println("+--------------------+--------------------+");
     }
 }

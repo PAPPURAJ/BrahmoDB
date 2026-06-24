@@ -1,14 +1,19 @@
 package com.pappuraj.brahmodb.core;
-
-import com.pappuraj.brahmodb.catalog.Column;
-import com.pappuraj.brahmodb.catalog.TableSchema;
-
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.pappuraj.brahmodb.catalog.Column;
+import com.pappuraj.brahmodb.catalog.TableSchema;
+import com.pappuraj.brahmodb.storage.Row;
+
+
+
 
 public class TableManager {
 
@@ -92,5 +97,146 @@ public class TableManager {
 
     private boolean isValidName(String name) {
         return name != null && name.matches("[a-zA-Z_][a-zA-Z0-9_]*");
+    }
+
+
+
+
+    public TableSchema describeTable(String databaseName, String tableName) {
+        if (databaseName == null) {
+            return null;
+        }
+
+        File schemaFile = new File(
+                DATA_DIRECTORY + File.separator + databaseName
+                        + File.separator + TABLES_DIRECTORY,
+                tableName + ".schema"
+        );
+
+        if (!schemaFile.exists()) {
+            return null;
+        }
+
+        List<Column> columns = new ArrayList<>();
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(schemaFile))) {
+            String line;
+            boolean firstLine = true;
+
+            while ((line = reader.readLine()) != null) {
+                if (firstLine) {
+                    firstLine = false;
+                    continue;
+                }
+
+                String[] parts = line.split(":");
+
+                if (parts.length == 2) {
+                    String columnName = parts[0].trim();
+                    String columnType = parts[1].trim();
+
+                    columns.add(new Column(columnName, columnType));
+                }
+            }
+        } catch (IOException e) {
+            return null;
+        }
+
+        return new TableSchema(tableName, columns);
+    }
+
+
+
+
+
+
+    public String insertIntoTable(String databaseName, String tableName, Row row) {
+        if (databaseName == null) {
+            return "No database selected. Use USE database_name; first.";
+        }
+
+        TableSchema schema = describeTable(databaseName, tableName);
+
+        if (schema == null) {
+            return "Table does not exist: " + tableName;
+        }
+
+        if (row.getValues().size() != schema.getColumns().size()) {
+            return "Column count does not match value count.";
+        }
+
+        String validationError = validateRow(schema, row);
+
+        if (validationError != null) {
+            return validationError;
+        }
+
+        File dataFile = new File(
+                DATA_DIRECTORY + File.separator + databaseName
+                        + File.separator + TABLES_DIRECTORY,
+                tableName + ".data"
+        );
+
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(dataFile, true))) {
+            writer.write(String.join("|", row.getValues()));
+            writer.newLine();
+        } catch (IOException e) {
+            return "Failed to insert row: " + e.getMessage();
+        }
+
+        return "1 row inserted.";
+    }
+
+    private String validateRow(TableSchema schema, Row row) {
+        List<Column> columns = schema.getColumns();
+        List<String> values = row.getValues();
+
+        for (int i = 0; i < columns.size(); i++) {
+            Column column = columns.get(i);
+            String value = values.get(i);
+
+            String error = validateValue(column, value);
+
+            if (error != null) {
+                return error;
+            }
+        }
+
+        return null;
+    }
+
+    private String validateValue(Column column, String value) {
+        String type = column.getType();
+
+        try {
+            switch (type) {
+                case "INT":
+                    Integer.parseInt(value);
+                    break;
+
+                case "DOUBLE":
+                    Double.parseDouble(value);
+                    break;
+
+                case "BOOLEAN":
+                    if (!value.equalsIgnoreCase("true") && !value.equalsIgnoreCase("false")) {
+                        return "Invalid BOOLEAN value for column '" + column.getName() + "': " + value;
+                    }
+                    break;
+
+                case "TEXT":
+                    if (value.isEmpty()) {
+                        return "Invalid TEXT value for column '" + column.getName() + "'.";
+                    }
+                    break;
+
+                default:
+                    return "Unsupported column type: " + type;
+            }
+        } catch (NumberFormatException e) {
+            return "Invalid " + type + " value for column '" + column.getName() + "': " + value;
+        }
+
+        return null;
     }
 }
