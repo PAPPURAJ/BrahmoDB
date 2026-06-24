@@ -1,8 +1,10 @@
 package com.pappuraj.brahmodb;
 
+import com.pappuraj.brahmodb.cli.BrahmoShell;
+
 public class Main {
     public static void main(String[] args) {
-        System.out.println("BrahmoDB started successfully.");
-        System.out.println("Oracle-inspired relational database engine from scratch in Java.");
+        BrahmoShell shell = new BrahmoShell();
+        shell.start();
     }
 }
