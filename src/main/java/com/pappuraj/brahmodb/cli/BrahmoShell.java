@@ -95,6 +95,8 @@ public class BrahmoShell {
                     handleSelectWhere(command);
                 } else if (normalizedCommand.startsWith("select * from ")) {
                     handleSelectAll(command);
+                } else if (normalizedCommand.startsWith("select ") && normalizedCommand.contains(" from ")) {
+                    handleSelectColumns(command);
                 } else {
                     System.out.println("Unknown command: " + input);
                     System.out.println("Type 'help;' to see available commands.");
@@ -415,6 +417,7 @@ public class BrahmoShell {
         System.out.println("  INSERT INTO table VALUES (...);            Insert a row into a table");
         System.out.println("  SELECT * FROM table;                       Show all rows from a table");
         System.out.println("  SELECT * FROM table WHERE col = value;     Show rows matching condition");
+        System.out.println("  SELECT col1, col2 FROM table;              Show selected columns from a table");
         System.out.println();
         System.out.println("Supported types:");
         System.out.println("  INT, TEXT, DOUBLE, BOOLEAN");
@@ -646,5 +649,111 @@ public class BrahmoShell {
         }
 
         return value;
+    }
+
+
+    private void handleSelectColumns(String command) {
+        String currentDatabase = databaseManager.getCurrentDatabase();
+
+        if (currentDatabase == null) {
+            System.out.println("No database selected. Use USE database_name; first.");
+            return;
+        }
+
+        String cleanCommand = command.replace(";", "").trim();
+        String lowerCommand = cleanCommand.toLowerCase();
+
+        int selectIndex = lowerCommand.indexOf("select");
+        int fromIndex = lowerCommand.indexOf("from");
+
+        if (selectIndex == -1 || fromIndex == -1 || fromIndex <= selectIndex) {
+            System.out.println("Invalid SELECT syntax.");
+            System.out.println("Example: SELECT id, name FROM students;");
+            return;
+        }
+
+        String columnsText = cleanCommand
+                .substring(selectIndex + "select".length(), fromIndex)
+                .trim();
+
+        String tableName = cleanCommand
+                .substring(fromIndex + "from".length())
+                .trim();
+
+        if (columnsText.isEmpty() || tableName.isEmpty()) {
+            System.out.println("Invalid SELECT syntax.");
+            System.out.println("Example: SELECT id, name FROM students;");
+            return;
+        }
+
+        TableSchema schema = tableManager.describeTable(currentDatabase, tableName);
+
+        if (schema == null) {
+            System.out.println("Table does not exist: " + tableName);
+            return;
+        }
+
+        List<Row> rows = tableManager.selectAll(currentDatabase, tableName);
+
+        if (rows == null) {
+            System.out.println("Table does not exist: " + tableName);
+            return;
+        }
+
+        List<String> selectedColumnNames = parseSelectedColumns(columnsText);
+        List<Integer> selectedIndexes = new ArrayList<>();
+        List<Column> selectedColumns = new ArrayList<>();
+
+        for (String columnName : selectedColumnNames) {
+            int columnIndex = tableManager.findColumnIndex(schema, columnName);
+
+            if (columnIndex == -1) {
+                System.out.println("Column does not exist: " + columnName);
+                return;
+            }
+
+            selectedIndexes.add(columnIndex);
+            selectedColumns.add(schema.getColumns().get(columnIndex));
+        }
+
+        List<Row> projectedRows = projectRows(rows, selectedIndexes);
+
+        TableSchema projectedSchema = new TableSchema(tableName, selectedColumns);
+
+        printRows(projectedSchema, projectedRows);
+    }
+
+
+    private List<String> parseSelectedColumns(String columnsText) {
+        List<String> columns = new ArrayList<>();
+
+        String[] parts = columnsText.split(",");
+
+        for (String part : parts) {
+            String column = part.trim();
+
+            if (!column.isEmpty()) {
+                columns.add(column);
+            }
+        }
+
+        return columns;
+    }
+
+    private List<Row> projectRows(List<Row> rows, List<Integer> selectedIndexes) {
+        List<Row> projectedRows = new ArrayList<>();
+
+        for (Row row : rows) {
+            List<String> originalValues = row.getValues();
+            List<String> selectedValues = new ArrayList<>();
+
+            for (Integer index : selectedIndexes) {
+                selectedValues.add(originalValues.get(index));
+            }
+
+            projectedRows.add(new Row(selectedValues));
+        }
+
+        return projectedRows;
     }
 }
